@@ -51,19 +51,10 @@ Running `:SortLSP` produces:
 [ bash curl zlib ]
 ```
 
-## Setup
+## Installation
 
-Make the directory available as the `sortlsp` Lua module. For example:
-
-```sh
-ln -s /path/to/sortlsp ~/.config/nvim/lua/sortlsp
-```
-
-Then call setup from your Neovim configuration:
-
-```lua
-require("sortlsp").setup()
-```
+Install this directory with your Neovim plugin manager. The `:SortLSP` command
+is registered automatically when Neovim loads the plugin.
 
 Use `:SortLSP` while the cursor is inside a supported object, attribute set,
 array, or list. Only direct entries are reordered; nested containers are left
@@ -72,11 +63,11 @@ end-of-line comment moves with the entry on that line.
 
 ## Adding a language family
 
-Language definitions live in `languages/`. Each `*.lua` file in that directory
-is loaded automatically. Add one file for a new language family:
+Language definitions live in `lua/sortlsp/languages/`. Each `*.lua` file in
+that directory is loaded automatically. Add one file for a new language family:
 
 ```lua
--- languages/example.lua
+-- lua/sortlsp/languages/example.lua
 return {
   filetypes = { "example" },
   containers = {
