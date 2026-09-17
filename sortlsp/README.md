@@ -83,6 +83,7 @@ return {
     record = {
       entries = { "record_entry" },
       key = "name",
+      separator = ",",
     },
     list = {
       entries = true,
@@ -104,3 +105,7 @@ key = function(entry, bufnr)
   return vim.treesitter.get_node_text(entry, bufnr)
 end
 ```
+
+`separator` is optional. Set it when entries are separated by a literal token,
+such as a comma. This keeps that token before an end-of-line comment when the
+comment moves with its entry.
