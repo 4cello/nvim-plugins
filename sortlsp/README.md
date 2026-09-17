@@ -3,16 +3,15 @@
 `sortlsp` sorts the direct entries of the Tree-sitter container under the
 cursor.
 
-It supports JSON and JSONC objects and arrays, JavaScript/TypeScript objects
-and arrays, and Nix attribute sets and lists. Object properties and Nix
-bindings are sorted by key. List and array elements are sorted by their full
-text.
+It originally supports JSON/JS/TS objects and arrays, and Nix attribute sets and lists. 
+More languages can be supported via the `languages/`directory.
+Key-value types are sorted by key. List and array elements are sorted by their fulltext.
 
-For example, with the cursor inside this JSON object:
+For example, with the cursor inside of this JSON object:
 
-```json
+```jsonc
 {
-  "zebra": {
+  "zebra": { // <-- cursor here
     "second": 2,
     "first": 1
   },
@@ -25,7 +24,7 @@ For example, with the cursor inside this JSON object:
 
 Running `:SortLSP` produces:
 
-```json
+```jsonc
 {
   "apple": {
     "yellow": true,
