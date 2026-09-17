@@ -39,25 +39,62 @@ local function find_enclosing_container(node, language)
   end
 end
 
-local function direct_entries(container, container_spec)
-  local entries = container_spec.entries
-  local allowed_set
+local function is_standalone_comment(comment, bufnr)
+  local start_row, start_col, end_row, end_col = comment:range()
+  local lines = api.nvim_buf_get_lines(bufnr, start_row, end_row + 1, false)
+  local before = lines[1]:sub(1, start_col)
+  local after = lines[#lines]:sub(end_col + 1)
 
-  if entries ~= true then
+  return before:match("^%s*$") and after:match("^%s*$")
+end
+
+local function direct_entries(container, container_spec, bufnr)
+  local allowed = container_spec.entries
+  local allowed_set
+  if allowed ~= true then
     allowed_set = {}
-    for _, name in ipairs(entries) do
+    for _, name in ipairs(allowed) do
       allowed_set[name] = true
     end
   end
 
   local result = {}
-
+  local comments = {}
   for child in container:iter_children() do
-    if child:named()
-      and child:type() ~= "comment"
-      and (entries == true or allowed_set[child:type()])
-    then
-      table.insert(result, child)
+    if child:named() then
+      if child:type() == "comment" then
+        table.insert(comments, child)
+      elseif allowed == true or allowed_set[child:type()] then
+        table.insert(result, {
+          node = child,
+          leading_comments = {},
+          trailing_comments = {},
+        })
+      end
+    end
+  end
+
+  for _, comment in ipairs(comments) do
+    local comment_start_row, comment_start_col = comment:range()
+    if is_standalone_comment(comment, bufnr) then
+      for _, entry in ipairs(result) do
+        local entry_start_row = entry.node:range()
+        if entry_start_row > comment_start_row then
+          table.insert(entry.leading_comments, comment)
+          break
+        end
+      end
+    else
+      for i = #result, 1, -1 do
+        local entry_start_row, _, entry_end_row, entry_end_col = result[i].node:range()
+        if entry_start_row == comment_start_row
+          and entry_end_row == comment_start_row
+          and entry_end_col <= comment_start_col
+        then
+          table.insert(result[i].trailing_comments, comment)
+          break
+        end
+      end
     end
   end
 
@@ -66,41 +103,63 @@ end
 
 local function entry_key(entry, bufnr, container_spec)
   local key = container_spec.key
-
   if type(key) == "function" then
-    return key(entry, bufnr)
+    return key(entry.node, bufnr)
   end
 
   if type(key) == "string" then
-    local key_node = entry:field(key)[1]
+    local key_node = entry.node:field(key)[1]
     if key_node then
       return node_text(key_node, bufnr)
     end
   end
 
-  return node_text(entry, bufnr)
+  return node_text(entry.node, bufnr)
 end
 
 local function sort_entries(entries, bufnr, container_spec)
   local decorated = {}
-
   for i, entry in ipairs(entries) do
     table.insert(decorated, {
-      node = entry,
+      entry = entry,
       key = entry_key(entry, bufnr, container_spec),
       index = i,
     })
   end
 
   table.sort(decorated, function(a, b)
-    if a.key == b.key then
-      return a.index < b.index
-    end
-
-    return a.key < b.key
+    return a.key == b.key and a.index < b.index or a.key < b.key
   end)
 
   return decorated
+end
+
+local function entry_text(entry, bufnr)
+  local text = node_text(entry.node, bufnr)
+
+  if #entry.leading_comments > 0 then
+    local first_comment = entry.leading_comments[1]
+    local start_row, start_col = first_comment:range()
+    local entry_start_row, entry_start_col = entry.node:range()
+    local lines = api.nvim_buf_get_text(
+      bufnr,
+      start_row,
+      start_col,
+      entry_start_row,
+      entry_start_col,
+      {}
+    )
+    text = table.concat(lines, "\n") .. text
+  end
+
+  for _, comment in ipairs(entry.trailing_comments) do
+    local comment_start_row, comment_start_col = comment:range()
+    local line = api.nvim_buf_get_lines(bufnr, comment_start_row, comment_start_row + 1, false)[1]
+    local whitespace = line:sub(1, comment_start_col):match("%s*$") or ""
+    text = text .. whitespace .. node_text(comment, bufnr)
+  end
+
+  return text
 end
 
 local function replace_entries(bufnr, entries, sorted)
@@ -108,15 +167,18 @@ local function replace_entries(bufnr, entries, sorted)
     return
   end
 
-  -- Snapshot all text before modifying the buffer.
   local texts = {}
   for i, item in ipairs(sorted) do
-    texts[i] = node_text(item.node, bufnr)
+    texts[i] = entry_text(item.entry, bufnr)
   end
 
   local replacements = {}
   for i, entry in ipairs(entries) do
-    local sr, sc, er, ec = entry:range()
+    local sr, sc, er, ec = entry.node:range()
+    if #entry.leading_comments > 0 then
+      sr, sc = entry.leading_comments[1]:range()
+    end
+
     table.insert(replacements, {
       start_row = sr,
       start_col = sc,
@@ -124,14 +186,25 @@ local function replace_entries(bufnr, entries, sorted)
       end_col = ec,
       text = texts[i],
     })
+
+    for _, comment in ipairs(entry.trailing_comments) do
+      local csr, csc, cer, cec = comment:range()
+      local line = api.nvim_buf_get_lines(bufnr, csr, csr + 1, false)[1]
+      local whitespace = line:sub(1, csc):match("%s*$") or ""
+      table.insert(replacements, {
+        start_row = csr,
+        start_col = csc - #whitespace,
+        end_row = cer,
+        end_col = cec,
+        text = "",
+      })
+    end
   end
 
-  -- Replace from bottom to top so earlier ranges remain valid.
   table.sort(replacements, function(a, b)
     if a.start_row == b.start_row then
       return a.start_col > b.start_col
     end
-
     return a.start_row > b.start_row
   end)
 
@@ -178,7 +251,7 @@ function M.sort()
     return
   end
 
-  local entries = direct_entries(container, container_spec)
+  local entries = direct_entries(container, container_spec, bufnr)
   if #entries < 2 then
     return
   end

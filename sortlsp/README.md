@@ -67,7 +67,8 @@ require("sortlsp").setup()
 
 Use `:SortLSP` while the cursor is inside a supported object, attribute set,
 array, or list. Only direct entries are reordered; nested containers are left
-unchanged.
+unchanged. A standalone comment moves with the following entry, and an
+end-of-line comment moves with the entry on that line.
 
 ## Adding a language family
 
